@@ -1,0 +1,47 @@
+      
+            
+            
+#scraping ratings and reviews from mouthshut
+
+
+import requests  
+from bs4 import BeautifulSoup
+import pandas as pd
+
+data=[]
+
+for i in range(1,25,1):
+    url= "https://www.mouthshut.com/product-reviews/Amity-University-reviews-925107474-page-{}".format(i)
+    soup = BeautifulSoup(requests.get(url).text, "html.parser")
+    for title in soup.select("a[id^=ctl00_ctl00_ContentPlaceHolderFooter_ContentPlaceHolderBody_rptreviews_]"):
+        items = title.get('href')
+        if items:
+                broth = BeautifulSoup(requests.get(items).text, "html.parser")
+                for item in broth.select("div.rev-main-content"):
+                    print(item.text)
+                date1=broth.findAll("span",{"class":"review-date"})
+                date=[]
+                for x in date1:
+                    date.append(str(x)[91:105])
+                    print(date)
+                    
+                rating1=broth.findAll("div",{"class":"small-text rating"})
+                rating2=rating1[0].span.span.span.span.findAll()
+                rating_text=[]
+                for x in rating1:
+                    rating_text.append(str(x))
+                    rating_t=""
+                    for x in rating_text:
+                        rating_t += x
+                        rating=rating_t.count(" rated-star")
+                        print(rating)
+                        data.append((rating,date,item.text))
+                   
+                        
+                    
+df=pd.DataFrame(data,columns=["Rating","Review_text"])
+export_csv=df.to_csv (r'C:\Users\NEHA\Downloads\amity_mouthshut_reviews.csv')
+
+#things to be changed for different mouthshut links- link, range(for pages) and output csv name
+
+            
