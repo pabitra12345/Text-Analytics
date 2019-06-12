@@ -39,7 +39,7 @@ for i in range(1,25,1):
                    
                         
                     
-df=pd.DataFrame(data,columns=["Rating","Review_text"])
+df=pd.DataFrame(data,columns=["Rating","Date","Review_text"])
 export_csv=df.to_csv (r'C:\Users\NEHA\Downloads\amity_mouthshut_reviews.csv')
 
 #things to be changed for different mouthshut links- link, range(for pages) and output csv name
