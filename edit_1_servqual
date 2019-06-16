@@ -1,0 +1,257 @@
+####################################################################
+#CODES FOR MAPPING SENTIMENT SCORES WITH SERVICE DIMENSIONS
+####################################################################
+
+#source file- csv with online reviews from mouthshut and google with rating of each review
+#output file- csv containing sentiment score of each review mapped with each service dimension
+
+#The codes are split to 3 categories with 2 output files
+# 1. Extracting pos tags with sentiment scores from each sentence of each review with service dimensions and rating
+# 2. Calculating sentiment score of each review for each service dimension and map it with rating
+
+
+
+#####################################################
+#1. EXTRACTING POS TAGS WITH SENTIMENT SCORES
+#####################################################
+
+#java heap memory allocation should be always done before using library rJava
+options(java.parameters = "-Xmx4096m")
+require(rJava)
+require(NLP)
+require(openNLP)
+library(textstem)
+library(stringr)
+library(stringi)
+library(SentimentAnalysis)
+library(sentimentr)
+library(tokenizers)
+library(tm)
+library(tibble)
+library(quanteda)
+library(wordnet)
+
+
+#dummy dataframe consisting of pos in columns
+df=data.frame(matrix(nrow=1,ncol=25))
+colnames(df)=c("Review_no","Review","Source","Organization","Sentence","Noun","Noun_plural","Noun_proper","Noun_plural_proper","Verb","Verb_Past","Verb_gerund","Verb_past_participle","Verb_nonsingluar","Verb_singular","Adverb","Adverb_comparative","Adverb_superlative","Adjective","Adjective_comparative","Adjective_superlative","conjunction","Sentiment_pos","Dimension","Rating")
+df[is.na(df)]=""
+head(df)
+i=1
+
+
+#list of aspect names mapped with service dimensions
+list_aspect=list(c("infrastructure","computer","system","clean","quality","fake","comfort","facility","hospital","hygiene","maintainance","building","ventilation","beds","bedrooms"),c("assessment","billing","treatment","diagnosis","professionals","doctors","nurses","experience","treatment","process","happy","stupid","interest","reluctant","specialized","money","staff","knowledge","service","lazy"),c("busy","help","response","wait","talk","discuss","prompt","cooperative","wait","answer","explain","told","advise","interest"),c("trust","beleive","confidence","honest","cost","responsible"),c("friendliness","attention","polite","respect","care","concerned","treat","emotion"))
+names(list_aspect)=c("Tangibles","Reliability","Responsiveness","Assurance","Empathy")
+
+
+#reading servqual file
+servqual=read.csv("D:/Text analytics/servqual project/hospitals/manipal/Sourcefile_manipal_google+mouthshut.csv")
+
+
+#loop for extracting all reviews using rownumber
+
+for (k in 1:nrow(servqual)) {
+  tryCatch(
+    {
+      review=as.String(servqual$Text[k])
+      review_split=str_split(review,"[:punct:]")
+      df[i,1]=paste("Review",k)
+      df[i,2]=as.character(review)
+      df[i,25]=servqual$Rating[k]
+      
+      for (l in 1:(lengths(review_split)-1)) {
+        tryCatch(
+          {
+        
+        string1=as.String(review_split[[1]][l])
+        sent_token_annotator=Maxent_Sent_Token_Annotator()
+        word_token_annotator=Maxent_Word_Token_Annotator()
+        annotate_word=annotate(string1,list(sent_token_annotator,word_token_annotator))
+        pos_tag_annotator=Maxent_POS_Tag_Annotator()
+        annotate_pos=annotate(string1,pos_tag_annotator,annotate_word)
+        subset_word=subset(annotate_pos,type=="word")
+        tags_word=sapply(subset_word$features,'[[',"POS")
+        s_word_tag=as.String(sprintf("%s%s%s",string1[subset_word],"/",tags_word))
+        review_split[[1]][l]=str_replace_all(s_word_tag,"\n"," ")
+          },error=function(e){}
+        )  
+      }
+      
+      
+      for (j in 1:(lengths(review_split)-1)) {
+        
+        string_pos=review_split[[1]][j]
+        df[i,3]=as.character(servqual$Source[k])
+        df[i,4]=as.character(servqual$Organization[k])
+        df[i,5]=as.character(string_pos)
+        if (str_detect(string_pos,"/NN")==TRUE) {
+          df[i,6]=str_replace(str_extract(string_pos,"\\w+/NN"),"/NN","")
+          df[i,7]=str_replace(str_extract(string_pos,"\\w+/NNS"),"/NNS","")
+          df[i,8]=str_replace(str_extract(string_pos,"\\w+/NNP"),"/NNP","")
+          df[i,9]=str_replace(str_extract(string_pos,"\\w+/NNPS"),"/NNPS","")
+          df[i,10]=str_replace(str_extract(string_pos,"\\w+/VB"),"/VB","")
+          df[i,11]=str_replace(str_extract(string_pos,"\\w+/VBD"),"/VBD","")
+          df[i,12]=str_replace(str_extract(string_pos,"\\w+/VBG"),"/VBG","")
+          df[i,13]=str_replace(str_extract(string_pos,"\\w+/VBN"),"/VBN","")
+          df[i,14]=str_replace(str_extract(string_pos,"\\w+/VBP"),"/VBP","")
+          df[i,15]=str_replace(str_extract(string_pos,"\\w+/VBZ"),"/VBZ","")
+          df[i,16]=str_replace(str_extract(string_pos,"\\w+/RB"),"/RB","")
+          df[i,17]=str_replace(str_extract(string_pos,"\\w+/RBR"),"/RBR","")
+          df[i,18]=str_replace(str_extract(string_pos,"\\w+/RBS"),"/RBS","")
+          df[i,19]=str_replace(str_extract(string_pos,"\\w+/JJ"),"/JJ","")
+          df[i,20]=str_replace(str_extract(string_pos,"\\w+/JJR"),"/JJR","")
+          df[i,21]=str_replace(str_extract(string_pos,"\\w+/JJS"),"/JJS","")
+          df[i,22]=str_replace(str_extract(string_pos,"\\w+/CC"),"/CC","")
+          i=i+1
+        }
+        
+        df[is.na(df)]=""
+        df[i-1,23]=sentiment(vapply(lapply(strsplit(str_replace_all(as.String(df[i-1,6:20]),"\n"," "), " "), unique), paste, character(1L), collapse = " "))$sentiment      
+        
+        if (str_detect(string_pos,"/CC")==TRUE) {
+          start_index=str_locate(string_pos,"\\w+/CC")[1,2]
+          dummy_string1=str_sub(string_pos,start = start_index,end = str_length(string_pos))
+          df[i,3]=as.character(servqual$Source[k])
+          df[i,4]=as.character(servqual$Organization[k])
+          df[i,5]=as.character(dummy_string1)
+          
+          df[i,6]=str_replace(str_extract(string_pos,"\\w+/NN"),"/NN","")
+          df[i,7]=str_replace(str_extract(string_pos,"\\w+/NNS"),"/NNS","")
+          df[i,8]=str_replace(str_extract(string_pos,"\\w+/NNP"),"/NNP","")
+          df[i,9]=str_replace(str_extract(string_pos,"\\w+/NNPS"),"/NNPS","")
+          df[i,10]=str_replace(str_extract(string_pos,"\\w+/VB"),"/VB","")
+          df[i,11]=str_replace(str_extract(string_pos,"\\w+/VBD"),"/VBD","")
+          df[i,12]=str_replace(str_extract(string_pos,"\\w+/VBG"),"/VBG","")
+          df[i,13]=str_replace(str_extract(string_pos,"\\w+/VBN"),"/VBN","")
+          df[i,14]=str_replace(str_extract(string_pos,"\\w+/VBP"),"/VBP","")
+          df[i,15]=str_replace(str_extract(string_pos,"\\w+/VBZ"),"/VBZ","")
+          df[i,16]=str_replace(str_extract(string_pos,"\\w+/RB"),"/RB","")
+          df[i,17]=str_replace(str_extract(string_pos,"\\w+/RBR"),"/RBR","")
+          df[i,18]=str_replace(str_extract(string_pos,"\\w+/RBS"),"/RBS","")
+          df[i,19]=str_replace(str_extract(string_pos,"\\w+/JJ"),"/JJ","")
+          df[i,20]=str_replace(str_extract(string_pos,"\\w+/JJR"),"/JJR","")
+          df[i,21]=str_replace(str_extract(string_pos,"\\w+/JJS"),"/JJS","")
+          df[i,22]=str_replace(str_extract(string_pos,"\\w+/CC"),"/CC","")
+          i=i+1
+        }
+        
+        df[is.na(df)]=""
+        df[i-1,23]=sentiment(vapply(lapply(strsplit(str_replace_all(as.String(df[i-1,6:20]),"\n"," "), " "), unique), paste, character(1L), collapse = " "))$sentiment      
+      
+        
+      }
+    },error=function(e){}
+  )
+  print(k)
+}
+
+
+view(df)
+write.csv(df,"D:/Text analytics/servqual project/step_1.csv")
+rm(list=ls())
+
+
+
+
+
+df=read.csv("D:/Text analytics/servqual project/step_1.csv")
+
+
+for(i in 1:nrow(df))
+if(df$Noun[i]!=""){
+  
+  if(str_detect(as.String(str_detect(as.String(list_aspect[1]),synonyms(char_wordstem(df$Noun[i], language = quanteda_options("language_stemmer")),"NOUN"))==TRUE),"TRUE")==TRUE){
+    df[i,24]=names(list_aspect[1])
+  }else if(str_detect(as.String(str_detect(as.String(list_aspect[2]),synonyms(char_wordstem(df$Noun[i], language = quanteda_options("language_stemmer")),"NOUN"))==TRUE),"TRUE")==TRUE){
+    df[i,24]=names(list_aspect[2])
+  }else if(str_detect(as.String(str_detect(as.String(list_aspect[3]),synonyms(char_wordstem(df$Noun[i], language = quanteda_options("language_stemmer")),"NOUN"))==TRUE),"TRUE")==TRUE){
+    df[i,24]=names(list_aspect[3])
+  }else if(str_detect(as.String(str_detect(as.String(list_aspect[4]),synonyms(char_wordstem(df$Noun[i], language = quanteda_options("language_stemmer")),"NOUN"))==TRUE),"TRUE")==TRUE){
+    df[i,24]=names(list_aspect[4])
+  }else if(str_detect(as.String(str_detect(as.String(list_aspect[5]),synonyms(char_wordstem(df$Noun[i], language = quanteda_options("language_stemmer")),"NOUN"))==TRUE),"TRUE")==TRUE){
+    df[i,24]=names(list_aspect[5])
+  }
+  
+}
+
+df[is.na(df)]=""
+view(df)
+write.csv(df,"D:/Text analytics/servqual project/step_1.csv")
+rm(list=ls())
+
+
+###########################################################################
+# 2. SENTIMENT SCORES OF EACH REVIEW MAPPED TO SERVICE DIMENSION
+###########################################################################
+
+
+df=read.csv("D:/Text analytics/servqual project/step_1.csv")
+dimension1=data.frame(matrix(nrow=1,ncol=8))
+colnames(dimension1)=c("Review","A1:Tangibles","A2:Reliability","A3:REsponsiveness","A4:Assurance","A5:Empathy","Average Sentiment Score","Rating")
+head(dimension1)
+dimension1[is.na(dimension1)]=""
+
+
+
+k=1
+for(i in 1:nrow(df)){
+  tryCatch(
+    {
+      dummy_df=df[which(df$Review_no==paste("Review",i)):(which(df$Review_no==paste("Review",i+1))-1),]
+      dimension1$Review[i]=dummy_df$Review[1]
+      dimension1$`A1:Tangibles`[k]=mean(as.numeric(dummy_df[dummy_df$Dimension=="Tangibles",]$`Sentiment_pos`))
+      dimension1$`A2:Reliability`[k]=mean(as.numeric(dummy_df[dummy_df$Dimension=="Reliability",]$`Sentiment_pos`))
+      dimension1$`A3:REsponsiveness`[k]=mean(as.numeric(dummy_df[dummy_df$Dimension=="Responsiveness",]$`Sentiment_pos`))
+      dimension1$`A4:Assurance`[k]=mean(as.numeric(dummy_df[dummy_df$Dimension=="Assurance",]$`Sentiment_pos`))
+      dimension1$`A5:Empathy`[k]=mean(as.numeric(dummy_df[dummy_df$Dimension=="Empathy",]$`Sentiment_pos`))
+      k=k+1
+    },error=function(e){}
+  )  
+  
+}
+
+dimension_df2[is.na(dimension_df2)]=""
+
+
+
+
+servqual=read.csv("C:/Users/Subhransu/Dropbox/Pabitra/Project- mapping service dimension with hospital reviews/manipal/Sourcefile_manipal_google+mouthshut.csv")
+View(dimension_df2)
+
+write.csv(dimension_df2,"C:/Users/Subhransu/Dropbox/Pabitra/Project- mapping service dimension with hospital reviews/manipal/step3.csv")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
