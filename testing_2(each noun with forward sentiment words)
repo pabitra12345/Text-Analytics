@@ -1,0 +1,323 @@
+#java heap memory allocation should be always done before using library rJava
+options(java.parameters = "-Xmx4096m")
+require(rJava)
+require(NLP)
+require(openNLP)
+library(textstem)
+library(stringr)
+library(stringi)
+library(SentimentAnalysis)
+library(sentimentr)
+library(tokenizers)
+library(tm)
+library(tibble)
+library(quanteda)
+library(wordnet)
+library(qdap)
+
+setDict("C:/Program Files (x86)/WordNet/2.1/dict")
+
+servqual=read.csv("D:/Text analytics/servqual project/hospitals/manipal/Sourcefile_manipal_google+mouthshut.csv")
+servqual$Text=as.character(servqual$Text)
+
+
+################################################
+##LIST OF FUNCTIONS USED
+################################################
+
+#function to return pos tags to all words of each sentence
+function_postag=function(review){
+  for (l in 1:length(review)) {
+    tryCatch(
+      {
+        
+        string1=as.String(review[l])
+        annotate_word=annotate(string1,list(Maxent_Sent_Token_Annotator(),Maxent_Word_Token_Annotator()))
+        annotate_pos=annotate(string1,Maxent_POS_Tag_Annotator(),annotate_word)
+        subset_word=subset(annotate_pos,type=="word")
+        tags_word=sapply(subset_word$features,'[[',"POS")
+        s_word_tag=as.String(sprintf("%s%s%s",string1[subset_word],"/",tags_word))
+        review[l]=str_replace_all(s_word_tag,"\n"," ")
+        
+      },error=function(e){}
+    )  
+  }
+  return(review)
+}
+
+##function for removing sentences without any noun
+
+function_withoutnoun_senremoval=function(review_split){
+  for(m in 1:length(review_split)){ 
+    tryCatch(
+      {
+        if(!str_detect(review_split[m],"/NN")){
+          review_split=review_split[-m]
+        }
+      },error=function(e){}
+    )  
+  }
+  
+  return(review_split)
+}
+
+###function for removing sentences with 0 sentiment scores
+function_0sentiment_senremoval=function(review){
+  
+  tryCatch(
+    {
+      suppressWarnings(for(j in 1:length(review_split)){                        ##removing sentences with 0 sentiment scores
+        if(round(sentiment(review_split[j])$sentiment,2)==0.00){                ##warning suppression using suppresWarnings(something related to external regressors)
+          ##error message-no non-missing arguments to max; returning -Inf
+          review_split=review_split[-j]
+        }
+      })
+      return(review)
+    } ,error=function(e){}
+  )  
+}
+
+
+##function for cleaning the review before pos tagging
+function_clean_review=function(review){
+  suppressWarnings(
+    tryCatch(
+      {
+        
+        review = str_replace_all(review," x-ray "," Xray ")
+        review=tolower(review)                      ##converting review to lower case
+        review=str_replace_all(review,"[[:digit:]].[[:digit:]]","")
+        review = gsub("[[:digit:]]", "", review)     ##removing digits from review
+        review = str_replace_all(review," \\w "," ")               ## removing singular words fro review
+        review = str_replace_all(review," dr. "," doctor ")
+        review = str_replace_all(review," dr "," doctor ")
+        review = str_replace_all(review," cuz "," because ")
+        review = str_replace_all(review," bcoz "," because ")
+        review = str_replace_all(review," mr. ","")
+        review = str_replace_all(review," ms. ","")
+        review = str_replace_all(review," don "," dont ")
+        
+        #review = rm_stopwords(review,stopwords = qdapDictionaries::Top25Words,unlist = FALSE, separate = FALSE)     ##removing stopwords
+        return(review)
+      },error=function(e){}
+    )
+  )
+}
+
+##function for exctracting noun indexes from a sentence for forward and backward operations
+
+function_noun_index_extraction=function(review_split){
+  tryCatch(
+    {
+      
+      len=lengths(str_locate_all(review_split,"\\b\\w+/NN\\b"))/2                                  ## can be improved and optimized
+      
+      firstnoun_start=str_locate_all(review_split,"\\b\\w+/NN\\b")[[1]][1]
+      firstnoun_end=str_locate_all(review_split,"\\b\\w+/NN\\b")[[1]][1,2]
+      
+      lastnoun_start=str_locate_all(review_split,"\\b\\w+/NN\\b")[[1]][len]
+      lastnoun_end=str_locate_all(review_split,"\\b\\w+/NN\\b")[[1]][len,2]
+      
+      first_noun=str_sub(review_split,firstnoun_start,firstnoun_end)
+      last_noun=str_sub(review_split,lastnoun_start,lastnoun_end)
+      
+      first_noun_index=match(first_noun,unlist(str_split(review_split," ")))
+      last_noun_index=match(last_noun,unlist(str_split(review_split," ")))
+      
+      return(list(first_noun_index,last_noun_index))
+    },error=function(e){}
+  ) 
+}
+
+
+
+
+###final clean including all functions
+function_finalclean=function(review){
+  tryCatch(
+    {
+      if(!is.na(review)){
+        
+        review=function_clean_review(review)           ##cleaning review before pos tagging
+        
+        review_split=sent_detect(review,endmarks = c("?",".","!","..","...","|"),incomplete.sub = TRUE)       ##splitting review string to sentences
+        
+        review_split=str_replace_all(review_split,"[[:punct:]]","")             ##replacing commas to null value
+        
+        #review_split=function_0sentiment_senremoval(review_split)       ##removing sentences with 0 sentiment scores
+        
+        review_split=function_postag(review_split)      ##applying pos tag function to get word tags in sentence
+        
+        #review_split=str_remove_all(review_split,"[[:punct:]]/[[:punct:]]")
+        review_split=str_replace_all(review_split,"  "," ")
+      }
+      
+      return(review_split)
+    },error=function(e){}
+  )  
+  
+}
+
+
+#############################################
+##EXTRACTING NOUN ONE BY ONE(FORWRD EXTRACTION)
+#############################################
+
+
+
+#importing base file(reviews)
+servqual=read.csv("C:/Users/NEHA/Dropbox/Pabitra/Project- mapping service dimension with hospital reviews/Sourcefile_manipal_google+mouthshut.csv")
+servqual$Text=as.character(servqual$Text)             #converting factor to string
+
+#dummy dataframe with respective colnames
+step1_df=data.frame(matrix(ncol=26))
+colnames(step1_df)=c("Review_no","Review","Source","Organization","Sentence_split","Noun","Noun_plural","Noun_proper","Noun_plural_proper","Verb","Verb_Past","Verb_gerund","Verb_past_participle","Verb_nonsingluar","Verb_singular","Adverb","Adverb_comparative","Adverb_superlative","Adjective","Adjective_comparative","Adjective_superlative","conjunction","Sentiment_pos","Dimension","Rating","Sentence_sentiment")
+step1_df[is.na(step1_df)]=""
+head(step1_df)
+j=1
+
+for (l in 1:3) {
+ review=servqual$Text[l]
+ review_split=function_finalclean(review)                         ##clean the reviews after pos tagging
+ 
+ review_split=function_0sentiment_senremoval(review_split)        ##remove sentences with 0 sentiment scores
+ #print(review_split)
+
+ step1_df[j,1]=paste("Review",l)                    ##review number in dataframe
+ step1_df[j,2]=as.character(review)                 ##complete review into the dataframe
+
+ 
+for(k in 1:length(review_split))
+  {
+ review_split_l=review_split[k]
+ step1_df[j,26]=as.character(review_split_l)                            ##sentence after splitting
+ len=lengths(str_locate_all(review_split_l,"\\b\\w+/NN\\b"))/2
+ review_len=sapply(strsplit(review_split_l, " "), length)
+ for(t in 1:len)
+  {
+   tryCatch(
+     {
+    
+   
+   location=str_locate_all(review_split_l,"\\b\\w+/NN\\b")
+   location_start_1=str_locate_all(review_split_l,"\\b\\w+/NN\\b")[[1]][t]
+   location_end_1=str_locate_all(review_split_l,"\\b\\w+/NN\\b")[[1]][t,2]
+   noun1=str_sub(review_split_l,location_start_1,location_end_1)
+   noun_index_1=match(noun1,unlist(str_split(review_split_l," ")))
+   
+   if(noun_index_1!=review_len){
+     tryCatch({
+   location_start_2=str_locate_all(review_split_l,"\\b\\w+/NN\\b")[[1]][t+1]
+   location_end_2=str_locate_all(review_split_l,"\\b\\w+/NN\\b")[[1]][t+1,2]
+   noun2=str_sub(review_split_l,location_start_2,location_end_2)
+   noun_index_2=match(noun2,unlist(str_split(review_split_l," ")))
+     }, error=function(e){})
+   }else{noun1=noun2}
+     
+   step1_df[j,5]=as.character(review_split_l)
+   step1_df[j,6]=str_replace(str_extract(noun1,"\\b\\w+/NN\\b"),"/NN","")
+   print(c(noun1,noun2))
+   
+   if(noun_index_1!=noun_index_2){
+     
+   for (i in noun_index_1:noun_index_2-1)
+   {
+       
+     forward= word(review_split_l,i+1,i+1)
+     #print(forward)
+     step1_df[j,3]=as.character(servqual$Source[l])
+     step1_df[j,4]=as.character(servqual$Organization[l])
+       
+       if(str_detect(forward,"\\b/NNS\\b")){
+         step1_df[j,7]=str_replace(str_extract(forward,"\\b\\w+/NNS\\b"),"/NNS","")
+       }else if(str_detect(forward,"\\b/NNP\\b")){
+         step1_df[j,8]=str_replace(str_extract(forward,"\\b\\w+/NNP\\b"),"/NNP","")
+       }else if(str_detect(forward,"\\b/NNPS\\b")){
+         step1_df[j,9]=str_replace(str_extract(forward,"\\b\\w+/NNPS\\b"),"/NNPS","")
+       }else if(str_detect(forward,"\\b/VB\\b")){
+         step1_df[j,10]=str_replace(str_extract(forward,"\\b\\w+/VB\\b"),"/VB","")
+       }else if(str_detect(forward,"\\b/VBD\\b")){
+         step1_df[j,11]=str_replace(str_extract(forward,"\\b\\w+/VBD\\b"),"/VBD","")
+       }else if(str_detect(forward,"\\b/VBG\\b")){
+         step1_df[j,12]=str_replace(str_extract(forward,"\\b\\w+/VBG\\b"),"/VBG","")
+       }else if(str_detect(forward,"\\b/VBN\\b")){
+         step1_df[j,13]=str_replace(str_extract(forward,"\\b\\w+/VBN\\b"),"/VBN","")
+       }else if(str_detect(forward,"\\b/VBP\\b")){
+         step1_df[j,14]=str_replace(str_extract(forward,"\\b\\w+/VBP\\b"),"/VBP","")
+       }else if(str_detect(forward,"\\b/VBZ\\b")){
+         step1_df[j,15]=str_replace(str_extract(forward,"\\b\\w+/VBZ\\b"),"/VBZ","")
+       }else if(str_detect(forward,"\\b/RB\\b")){
+         step1_df[j,16]=str_replace(str_extract(forward,"\\b\\w+/RB\\b"),"/RB","")
+       }else if(str_detect(forward,"\\b/RBR\\b")){
+         step1_df[j,17]=str_replace(str_extract(forward,"\\b\\w+/RBR\\b"),"/RBR","")
+       }else if(str_detect(forward,"\\b/RBS\\b")){
+         step1_df[j,18]=str_replace(str_extract(forward,"\\b\\w+/RBS\\b"),"/RBS","")
+       }else if(str_detect(forward,"\\b/JJ\\b")){
+         step1_df[j,19]=str_replace(str_extract(forward,"\\b\\w+/JJ\\b"),"/JJ","")
+       }else if(str_detect(forward,"\\b/JJR\\b")){
+         step1_df[j,20]=str_replace(str_extract(forward,"\\b\\w+/JJR\\b"),"/JJR","")
+       }else if(str_detect(forward,"\\b/JJS\\b")){
+         step1_df[j,21]=str_replace(str_extract(forward,"\\b\\w+/JJS\\b"),"/JJS","")
+       }else if(str_detect(forward,"\\b/CC\\b")){
+         step1_df[j,22]=str_replace(str_extract(forward,"\\b\\w+/CC\\b"),"/CC","")
+       }
+     step1_df[j,23]=sentiment(vapply(lapply(strsplit(str_replace_all(as.String(step1_df[i-1,6:20]),"\n"," "), " "), unique), paste, character(1L), collapse = " "))$sentiment      
+     step1_df[j,25]=servqual$Rating[k]
+     step1_df[j,26]=sentiment(str_replace_all(as.String(unlist(str_extract_all(unlist(review_split_l), "\\w+(?=\\/)"))),"\n"," "))$sentiment
+     
+        
+     }
+     j=j+1   
+   }
+   
+    
+ },error=function(e){})
+}    
+}
+ step1_df[is.na(step1_df)]=""
+ print(l)
+}
+
+  
+
+   
+   
+    
+
+   
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
